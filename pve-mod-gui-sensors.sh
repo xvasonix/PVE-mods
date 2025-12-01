@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # This bash script installs a modification to the Proxmox Virtual Environment (PVE) web user interface (UI) to display sensors information.
+# [PATCHED] Fixed for PVE 9.1 compatibility (StatusView header bug & Multiline matching)
 #
 
 ################### Configuration #############
@@ -573,15 +574,14 @@ collect_system_info() {
 
 #region widget generation functions
 # Helper function to insert widget after thermal items
+# FIX: Modified to support PVE 9.1 multi-line 'cpus' item
 insert_widget_after_thermal() {
-	local widget_file="$1"
-	sed -i "/^Ext.define('PVE.node.StatusView',/ {
-		:a
-		/items:/!{N;ba;}
-		:b
-		/'cpus.*},/!{N;bb;}
-		r $widget_file
-	}" "$PVE_MANAGER_LIB_JS_FILE"
+    local widget_file="$1"
+    # PVE 9.1 호환성 패치: 'itemId: 'cpus'' 라인부터 그 블록이 끝나는 '},' 라인까지 범위를 지정하고,
+    # 닫는 괄호 '},' 가 있는 줄 바로 뒤에 위젯 파일을 삽입합니다.
+    sed -i "/itemId: 'cpus'/,/},/ {
+        /},/ r $widget_file
+    }" "$PVE_MANAGER_LIB_JS_FILE"
 }
 
 # Helper function to generate widget and insert it
@@ -761,6 +761,7 @@ EOF
 }
 
 # Function to generate and insert temperature conversion helper class
+# FIX: Modified to prepend the file instead of using sed /e which corrupted the file header
 generate_and_insert_temp_helper() {
 	local temp_js_file="/tmp/temp_helper.js"
 
@@ -861,7 +862,8 @@ EOF
         exit 1
     fi
 
-	sed -i "/^Ext.define('PVE.node.StatusView'/e cat /tmp/temp_helper.js" "$PVE_MANAGER_LIB_JS_FILE"
+    # Safely prepend the helper class to the JS file
+	cat "$temp_js_file" "$PVE_MANAGER_LIB_JS_FILE" > "${PVE_MANAGER_LIB_JS_FILE}.tmp" && mv "${PVE_MANAGER_LIB_JS_FILE}.tmp" "$PVE_MANAGER_LIB_JS_FILE"
 	rm "$temp_js_file"
 
 	info "Temperature helper inserted successfully."
